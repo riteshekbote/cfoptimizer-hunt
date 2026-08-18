@@ -49,3 +49,5 @@
 - PGRST205 name-oracle leaked full schema names (cash_flow_periods, cf_reports, qbo_connections, crm_pipeline_settings, plaid_items, equipment, cs_bank_monthly, unipile_accounts).
 - Auth: only email provider; signup POST-only (not tested per no_account_creation).
 - VERDICT: missing RLS on financial-aggregator tables; zero rows -> no data exposure; report as Low config finding (reports/2026-08-18_supabase_anon_key_rls.md).
+
+- 2026-08-18 DEEP-DIVE (opencode-session 2nd pass): realtime anon sub CONFIRMED (phx_reply ok, postgres_changes public.prospects, id 108174887); hashcat rockyou 14.3M EXHAUSTED no crack (secret strong, no service_role forgery); bundle sweep clean (anon only); storage [] ; auth token oracle no-enum (identical invalid_credentials x2); finding updated with addendum.

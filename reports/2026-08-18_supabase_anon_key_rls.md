@@ -33,3 +33,18 @@ only. Verify the empty state is intentional (dev/staging data in a prod project)
 ## Status
 READY TO SUBMIT (disclosure-only program, no rewards). Class: insecure default
 configuration / missing RLS. Severity: Low (no data readable; latent exposure).
+
+## Deep-dive addendum (2026-08-18, second pass)
+5. Realtime: anonymous WebSocket subscription ACCEPTED with only the anon key —
+   `phx_join` on `realtime:prospects` with `postgres_changes [* on public.prospects]`
+   returned `phx_reply status:ok` (subscription id 108174887). Realtime grants mirror
+   REST SELECT grants in Supabase — exposure path confirmed on a second channel.
+6. JWT secret crack: hashcat -m 16500 vs rockyou (14,343,384 candidates) EXHAUSTED,
+   no match -> secret is strong/random; service_role token forgery not feasible.
+7. Bundle secret sweep: no service_role JWT, no sk-/pk_live/whsec_, no Plaid/Unipile
+   secrets in index-DO8kisOM.js (anon key is the only credential shipped).
+8. Storage: bucket listing with anon key -> 200 [] (no buckets).
+9. Auth token oracle: password-grant with two fabricated emails -> byte-identical
+   `invalid_credentials` (400) -> no user enumeration.
+10. Realtime confirmed on 2nd channel only for prospects; plaid_items/customers
+    subscriptions implied by REST grants, not separately tested (same grant engine).
