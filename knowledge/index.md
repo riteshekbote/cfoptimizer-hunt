@@ -34,3 +34,10 @@
 
 ## FINDING INBOX (validated = move to reports/)
 - (empty)
+## 2026-08-18 (opencode-session) FINDING (LOW — config) @ app.cfoptimizer.com Supabase
+- anon key extracted from /assets/index-DO8kisOM.js (466KB) -> project hyrcvhzrnfbppyzuuosp.supabase.co (role anon, exp 2035).
+- Anon SELECT allowed on 14 tables (prospects/profiles/leads/customers/deals/cash_flow_periods/cf_reports/crm_pipeline_settings/company_memberships/user_sessions/plaid_items/equipment/cs_bank_monthly/unipile_accounts) — ALL EMPTY (*/0).
+- qbo_connections DENIED (42501) — QBO tokens protected.
+- PGRST205 name-oracle leaked full schema names (cash_flow_periods, cf_reports, qbo_connections, crm_pipeline_settings, plaid_items, equipment, cs_bank_monthly, unipile_accounts).
+- Auth: only email provider; signup POST-only (not tested per no_account_creation).
+- VERDICT: missing RLS on financial-aggregator tables; zero rows -> no data exposure; report as Low config finding (reports/2026-08-18_supabase_anon_key_rls.md).
