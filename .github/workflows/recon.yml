@@ -1,0 +1,95 @@
+name: cfoptimizer-recon
+
+on:
+  schedule:
+    - cron: "20 2 * * *"
+  workflow_dispatch:
+    inputs:
+      brute:
+        description: "perform active resolution (default passive)"
+        required: false
+        default: "false"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ProjectDiscovery tools
+        run: |
+          mkdir -p /tmp/pd && cd /tmp/pd
+          for tool in subfinder dnsx httpx; do
+            url=$(curl -s https://api.github.com/repos/projectdiscovery/$tool/releases/latest | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(a["browser_download_url"] for a in d["assets"] if a["name"].endswith("linux_amd64.zip")))')
+            curl -sL -o t.zip "$url" && unzip -oq t.zip && mv $tool /usr/local/bin/ 2>/dev/null || true
+          done
+          subfinder -version && dnsx -version && httpx -version
+
+      - name: Passive subdomain enumeration (wildcard scope)
+        run: |
+          subfinder -silent -all -d cfoptimizer.com -o /tmp/subs.txt 2>/dev/null || true
+          echo "subfinder count: $(wc -l < /tmp/subs.txt)"
+
+      - name: CRT + wayback passive enrichment
+        run: |
+          curl -s "https://crt.sh/?q=%25.cfoptimizer.com&output=json" 2>/dev/null | python3 -c '
+          import json,sys
+          try:
+            d=json.load(sys.stdin)
+            names=set()
+            for e in d:
+              for n in (e.get("name_value") or "").split("\n"):
+                n=n.strip().lstrip("*.")
+                if n.endswith("cfoptimizer.com"): names.add(n)
+            open("/tmp/crt.txt","w").write("\n".join(sorted(names)))
+            print("crt count:", len(names))
+          except Exception as ex: print("crt err", ex)
+          ' || true
+          cat /tmp/crt.txt 2>/dev/null >> /tmp/subs.txt
+          sort -u /tmp/subs.txt -o /tmp/subs.txt
+          wc -l /tmp/subs.txt
+
+      - name: Active resolution
+        run: |
+          dnsx -l /tmp/subs.txt -silent -o /tmp/aliwe.txt 2>/dev/null || true
+          wc -l /tmp/aliwe.txt
+
+      - name: HTTP probing
+        run: |
+          httpx -l /tmp/aliwe.txt -silent -o /tmp/live.txt -title -sc -td -tech-detect -timeout 10 -retries 1 -no-color 2>/dev/null || true
+          wc -l /tmp/live.txt || true
+
+      - name: Save results
+        run: |
+          mkdir -p out inventory
+          cp /tmp/subs.txt out/subs.txt 2>/dev/null || true
+          cp /tmp/aliwe.txt out/resolved.txt 2>/dev/null || true
+          cp /tmp/live.txt out/live.txt 2>/dev/null || true
+          {
+            echo "## recon $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            echo "subs=$(wc -l < /tmp/subs.txt 2>/dev/null) resolved=$(wc -l < /tmp/aliwe.txt 2>/dev/null) live=$(wc -l < /tmp/live.txt 2>/dev/null)"
+            cat /tmp/live.txt 2>/dev/null | head -200
+          } > inventory/recon-latest.md
+          cp inventory/recon-latest.md inventory/recon-$(date -u +'%Y-%m-%d-%H-%M').md 2>/dev/null || true
+          ls out/ 2>/dev/null
+
+      - name: Commit
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add out inventory || true
+          if ! git diff --cached --quiet; then
+            git commit -m "recon $(date -u +'%Y-%m-%d-%H-%M')"
+          fi
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin main && break
+            echo "push attempt $i failed, retrying in 20s..."
+            sleep 20
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cfoptimizer-recon
+          path: out/
+          retention-days: 7

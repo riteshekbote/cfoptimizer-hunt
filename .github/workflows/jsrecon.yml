@@ -1,0 +1,148 @@
+name: JS Recon (openapi/sourcemap/endpoint extraction)
+
+# Collects JavaScript + config inventory from the live Agicap hosts (inventory/live.txt)
+# then does a deterministic extractor (endpoints, sourcemaps, keys) + opencode deep pass
+# over the highest-value files. One batch per run, state in js-inventory.json.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      per_run:
+        description: "Files to analyze this run (default 15)"
+        required: false
+        default: "15"
+
+permissions:
+  contents: write
+
+env:
+  JS_MODEL: opencode/deepseek-v4-flash-free
+  PROBE_ALLOW: "cfoptimizer"
+
+jobs:
+  jsrecon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    concurrency:
+      group: jsrecon
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore JS blob cache
+        uses: actions/cache@v4
+        with:
+          path: blobs
+          key: cfjs-blobs-${{ github.run_id }}
+          restore-keys: cfjs-blobs-
+
+      - name: Install OpenCode
+        run: |
+          export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+          if command -v opencode >/dev/null 2>&1; then
+            opencode --version | head -1
+            exit 0
+          fi
+          npm install -g opencode-ai 2>/dev/null || npm install -g --prefix "$HOME/.npm-global" opencode-ai 2>/dev/null || true
+          if ! command -v opencode >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              curl -fsSL https://opencode.ai/install | bash && break
+              echo "opencode.ai installer attempt $i failed, retrying in 15s..."
+              sleep 15
+            done
+          fi
+          export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+          opencode --version | head -1
+
+      - name: Collect JS inventory (from live hosts + seed URLs)
+        run: |
+          export PATH="$HOME/.opencode/bin:$HOME/.npm-global/bin:$PATH"
+          if [ ! -f js-inventory.json ]; then echo "[]" > js-inventory.json; fi
+          mkdir -p scripts jsrecon
+          python3 - << 'PY'
+          import json, os, re, subprocess, urllib.request, urllib.error
+          hosts = []
+          try:
+              for line in open('inventory/recon-latest.md', errors='ignore'):
+                  m = re.match(r'https?://[^\s]+', line)
+                  if m: hosts.append(m.group(0).split()[0])
+          except OSError: pass
+          seeds = hosts[:20] or ['https://www.cfoptimizer.com/', 'https://app.cfoptimizer.com/']
+          inv = json.load(open('js-inventory.json')) if os.path.exists('js-inventory.json') else []
+          have = {i['url'] for i in inv}
+          new = []
+          for base in seeds:
+              try:
+                  req = urllib.request.Request(base, headers={'User-Agent':'Mozilla/5.0'})
+                  html = urllib.request.urlopen(req, timeout=15).read().decode(errors='ignore')
+              except Exception:
+                  continue
+              for m in re.finditer(r'(?:src|href)="([^"]+\.(?:js|json))"', html):
+                  u = m.group(1)
+                  if u.startswith('/'): u = base.rstrip('/') + u
+                  elif not u.startswith('http'): continue
+                  if u in have or u in new: continue
+                  new.append(u)
+          print('new js urls:', len(new))
+          inv.extend({'url': u, 'status': 'new'} for u in new)
+          json.dump(inv, open('js-inventory.json','w'), indent=1)
+          PY
+
+      - name: Analyze batch (extractor + opencode)
+        run: |
+          export PATH="$HOME/.opencode/bin:$HOME/.npm-global/bin:$PATH"
+          JS_PER_RUN="${{ github.event.inputs.per_run || '15' }}" python3 - << 'PY'
+          import json, os, re, urllib.request, subprocess, time
+          per = int(os.environ.get('JS_PER_RUN','15'))
+          inv = json.load(open('js-inventory.json'))
+          pending = [i for i in inv if i.get('status')=='new'][:per]
+          out = open('findings.md','a') if os.path.exists('findings.md') else open('findings.md','w')
+          out.write(f"\n## jsrecon {time.strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+          os.makedirs('blobs', exist_ok=True)
+          for item in pending:
+              u = item['url']; fn = 'blobs/' + re.sub(r'\W','_',u)[:80]
+              try:
+                  req = urllib.request.Request(u, headers={'User-Agent':'Mozilla/5.0'})
+                  data = urllib.request.urlopen(req, timeout=15).read()
+              except Exception as e:
+                  item['status']='error'; out.write(f"- ERR {u}: {str(e)[:60]}\n"); continue
+              open(fn,'wb').write(data)
+              try: txt = data.decode('utf-8', errors='ignore')
+              except Exception: txt = ''
+              # deterministic extractors
+              eps = sorted(set(re.findall(r'["\'`](/api/[A-Za-z0-9_\-/{}.]+)["\'`]', txt)))
+              smaps = sorted(set(re.findall(r'//# sourceMappingURL=(\S+\.map)', txt)))
+              keys = sorted(set(re.findall(r'(AIza[0-9A-Za-z_-]{30,}|[rs]k_live_[0-9A-Za-z]+|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})', txt)))
+              item['status']='done'
+              out.write(f"- {u} ({len(data)}B, {len(eps)} eps, {len(smaps)} maps, {len(keys)} key-hits)\n")
+              for e in eps[:20]: out.write(f"    EP {e}\n")
+              for s in smaps[:5]: out.write(f"    MAP {s}\n")
+              for k in keys[:5]: out.write(f"    KEY sha256:{__import__('hashlib').sha256(k.encode()).hexdigest()[:16]}\n")
+          json.dump(inv, open('js-inventory.json','w'), indent=1)
+          out.close()
+          print('analyzed', len(pending))
+          PY
+
+      - name: Commit
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add js-inventory.json findings.md blobs/.gitignore || true
+          git diff --cached --quiet || git commit -m "jsrecon run $(date -u +'%Y-%m-%d-%H-%M')"
+          git pull --rebase || true
+          git push || true
+
+      - name: Save JS blob cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: blobs
+          key: cfjs-blobs-${{ github.run_id }}

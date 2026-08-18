@@ -1,0 +1,253 @@
+name: Senior Hunter - Analyst Pipeline (cfoptimizer)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  TARGET: cfoptimizer.com
+  PROBE_ALLOW: "cfoptimizer"
+
+jobs:
+  analyst:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: hunt-${{ matrix.model.name }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        model:
+          - { id: opencode/big-pickle, name: bigpickle }
+          - { id: opencode/nemotron-3-ultra-free, name: nemotron3 }
+          - { id: opencode/longcat-2.0-free, name: longcat }
+          - { id: opencode/ling-3.0-flash-free, name: ling3 }
+          - { id: opencode/laguna-s-2.1-free, name: laguna }
+    env:
+      MODEL_ID: ${{ matrix.model.id }}
+      MODEL_NAME: ${{ matrix.model.name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install OpenCode
+        run: |
+          export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+          if command -v opencode >/dev/null 2>&1; then
+            opencode --version
+            exit 0
+          fi
+          npm install -g opencode-ai 2>/dev/null || npm install -g --prefix "$HOME/.npm-global" opencode-ai 2>/dev/null || true
+          if ! command -v opencode >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              curl -fsSL https://opencode.ai/install | bash && break
+              echo "opencode.ai installer attempt $i failed, retrying in 15s..."
+              sleep 15
+            done
+          fi
+          export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+          opencode --version
+
+      - name: Prepare context (RAG + state + last cycle)
+        run: |
+          mkdir -p knowledge inventory leads reports
+          [ -f knowledge/index.md ] || echo "# Knowledge Base (seed)" > knowledge/index.md
+          [ -f state_${MODEL_NAME}.json ] || echo '{"phase":"RECON"}' > state_${MODEL_NAME}.json
+          {
+            echo "=== SCOPE + RULES (MUST respect rejected_classes) ==="
+            cat scope.yml
+            echo "=== KNOWLEDGE BASE ==="
+            cat knowledge/index.md
+            echo "=== MY STATE ==="
+            cat state_${MODEL_NAME}.json
+            echo "=== MY LAST LEADS (tail) ==="
+            tail -60 leads/lead-${MODEL_NAME}.md 2>/dev/null || echo none
+            echo "=== FINDINGS (tail) ==="
+            tail -c 20000 findings.md 2>/dev/null || echo none
+            echo "=== RECON INVENTORY (tail) ==="
+            tail -100 inventory/recon-latest.md 2>/dev/null || echo none
+            echo "=== LATEST ROBOT PROBE RESULTS ==="
+            tail -40 probe-results.md 2>/dev/null || echo none
+          } > ctx.txt
+
+      - name: Analyst run (8-step methodology)
+        run: |
+          cat > analyst-prompt.txt << 'PROMPT_START'
+          You are a senior bug bounty ANALYST for target ${TARGET} (and *.${TARGET}). Scope + rules are above — the scope.yml rejected_classes list is the CF Optimizer policy (CORS/headers/TLS/DNS/rate-limit/self-XSS/low-value-CSRF/MiTM/non-exploitable are NOT reportable). Never propose those. Run these 8 steps and output ONLY the structured blocks.
+
+          STEP 1 — DELTA: Compare knowledge + inventory + your last leads. List only NEW or CHANGED surface items as [NEW]/[CHANGED] (one line each). If nothing is new, state "NO_DELTA".
+
+          STEP 2 — PRIORITIZE: Score the top new assets on 6 axes 0-10: attack_surface, business_value, tech_exposure (GraphQL/OAuth/JWT/upload/admin/uncommon stacks), gate_ease (10 = no auth needed), cloud_surface (cloud APIs/storage/metadata), freshness. priority = 0.25*attack + 0.25*business + 0.15*tech + 0.15*gate + 0.10*cloud + 0.10*fresh. Emit [PRIO] lines: asset, score, axis breakdown.
+
+          STEP 3 — HYPOTHESES: For the top 3 prioritized assets emit max 1 hypothesis each, strictly this schema:
+          [HYP] <title>
+          class: <IDOR|SSRF|AUTH|XSS|BUSLOGIC|MISCONFIG|OATH|OTHER>
+          asset: <host/endpoint>
+          confidence: <0-100>
+          reasoning: <facts only, 2-3 lines>
+          evidence_needed: <what proves it>
+          verify_steps: <passive-first concrete HTTP requests, or AUTH_HELPED:...>
+          impact: <what attacker gets + severity>
+          testability: <PASSIVE|AUTH_HELPED|HUMAN_ONLY>
+
+          HARD FORMAT RULE: one field per line. NEVER put confidence/class/asset inline inside the [HYP] title. Every field on its own line as 'key: value' directly under the [HYP] line.
+
+          STEP 4 — SELF-CRITIQUE: Drop hypotheses with confidence < 40, or class on the rejected_classes list, or no concrete verify_steps. Emit [PARKED] for dropped. Emit [FINAL] with survivors re-ranked.
+
+          STEP 5 — NEXT ACTION: Choose exactly one and emit [NEXT] <PROBE|SCAN|RAG|HUMAN>: <one concrete action, with the exact endpoint/request if PROBE>.
+
+          STEP 6 — LEARNING: Emit [LEARN] lines for any class newly proven dead or alive (REJECTED/ACCEPTED <class> @ <asset>: <reason>).
+
+          STEP 7 — RISK SCORE: Emit [RISK] cfoptimizer: <0-100> reason.
+
+          RULES: facts vs hypotheses strictly separated; no class on the rejected list; never mention secrets in full (hash them with sha256sum); all claims trace to context or your own read-only probes. Prefer fintech multi-tenant classes: IDOR / tenant-data isolation (prospects, cash-flow, bank accounts, forecasts), Supabase RLS bypass, auth bypass, SSRF, sensitive data exposure.
+          PROMPT_START
+          export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+          timeout -k 15 18m opencode run --model "$MODEL_ID" < analyst-prompt.txt > analyst-out.txt 2>&1 || true
+          grep -E '^\[(NEW|CHANGED|PRIO|HYP|PARKED|FINAL|NEXT|LEARN|RISK)\]|^class:|^confidence:|^asset:|^impact:|^testability:|^verify_steps:|^reasoning:|^evidence_needed:' analyst-out.txt > lead.txt || true
+          {
+            echo "## $(date -u +'%Y-%m-%d %H:%M:%S UTC') (model ${MODEL_NAME})"
+            cat lead.txt
+          } > lead_${MODEL_NAME}.txt
+          echo "lead bytes: $(wc -c < lead.txt) | raw bytes: $(wc -c < analyst-out.txt)"
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyst-${{ matrix.model.name }}
+          path: |
+            lead_${{ matrix.model.name }}.txt
+            analyst-out.txt
+            ctx.txt
+          if-no-files-found: warn
+
+  aggregate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: analyst
+    if: always()
+    concurrency:
+      group: hunt-aggregate
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download all model artifacts
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          path: art
+          merge-multiple: true
+
+      - name: Merge + rank + inventory + knowledge update (single committer)
+        run: |
+          mkdir -p leads reports knowledge inventory
+          for f in art/lead_*.txt; do
+            [ -f "$f" ] || continue
+            cat "$f" >> leads/lead-$(basename "$f" | sed -E 's/lead_([a-z0-9]+)\.txt/\1/').md
+          done
+          python3 << 'PY_EOF'
+          import re, glob, json, os, datetime
+          stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+          for f in glob.glob('art/lead_*.txt'):
+              base = os.path.basename(f)
+              model = re.sub(r'^lead_([a-z0-9]+)\.txt$', r'\1', base)
+              open(f'reports/hypotheses-{model}.txt', 'w').write(open(f).read())
+          all_h = []
+          for f in glob.glob('reports/hypotheses-*.txt'):
+              text = open(f).read()
+              m = re.search(r'^\[HYP\] (.*)$', text, re.M)
+              if not m: continue
+              title = m.group(1).strip()
+              c = re.search(r'^confidence:\s*(\d+)', text, re.M)
+              a = re.search(r'^asset:\s*(\S+)', text, re.M)
+              all_h.append((int(c.group(1)) if c else 0, a.group(1) if a else '?', title, f))
+          all_h.sort(reverse=True)
+          with open('reports/hypotheses.md', 'a') as out:
+              out.write(f"\n## RANKED HYPOTHESES {stamp}\n")
+              seen = set()
+              for conf, asset, title, f in all_h[:8]:
+                  key = title.lower()[:60]
+                  if key in seen: continue
+                  seen.add(key)
+                  out.write(f"- [{conf}] {asset}: {title} (from {f})\n")
+              for f in glob.glob('reports/hypotheses-*.txt'):
+                  n = re.search(r'^\[NEXT\] (.*)$', open(f).read(), re.M)
+                  if n: out.write(f"- NEXT({os.path.basename(f)}): {n.group(1).strip()[:160]}\n")
+          kpath = 'knowledge/index.md'
+          ktext = open(kpath).read() if os.path.exists(kpath) else ''
+          with open(kpath, 'a') as k:
+              for f in glob.glob('reports/hypotheses-*.txt'):
+                  for l in re.findall(r'^\[LEARN\] (.*)$', open(f).read(), re.M):
+                      line = f"- {stamp[:10]} {l.strip()}"
+                      if line not in ktext:
+                          k.write(line + "\n")
+          with open('inventory/recon-latest.md', 'a') as io:
+              io.write(f"\n## {stamp}\n")
+              for f in glob.glob('reports/hypotheses-*.txt'):
+                  for l in re.findall(r'^\[(NEW|CHANGED)\] (.*)$', open(f).read(), re.M):
+                      io.write(f"- {l[0]} {l[1].strip()[:200]}\n")
+          for sp in glob.glob('state_*.json'):
+              try: st = json.load(open(sp))
+              except Exception: st = {}
+              phases = ['RECON','SURFACE','HYPOTHESIS','POC']
+              if st.get('phase') in phases:
+                  st['phase'] = phases[min(phases.index(st['phase'])+1, 3)]
+              json.dump(st, open(sp, 'w'))
+          print('merged', len(all_h), 'hypotheses')
+          PY_EOF
+
+      - name: Run passive verifier on hypotheses (read-only)
+        shell: bash
+        run: |
+          python3 << 'ROBOT_PY'
+          import re, glob, ssl, urllib.request, os, time
+          allow = os.environ.get('PROBE_ALLOW', '').lower()
+          pat = re.compile(r'https://[^\s"\)\]\}]+')
+          urls, seen = [], set()
+          for f in glob.glob('art/lead_*.txt') + glob.glob('analyst-*.out'):
+            try: txt = open(f, errors='ignore').read()
+            except OSError: continue
+            for m in pat.findall(txt):
+              u = m.strip('.,;)]}>')
+              if u in seen: continue
+              seen.add(u)
+              if allow and not any(a in u.lower() for a in allow.split('|')): continue
+              urls.append(u[:300])
+          ctx = ssl.create_default_context()
+          rows = []
+          for u in urls[:12]:
+            try:
+              req = urllib.request.Request(u, method='GET', headers={'User-Agent': 'Mozilla/5.0 (passive verifier)'})
+              with urllib.request.urlopen(req, timeout=12, context=ctx) as r:
+                rows.append('%s -> %s len=%s type=%s' % (u, r.status, r.headers.get('Content-Length', '?'), r.headers.get('Content-Type', '')[:40]))
+            except urllib.error.HTTPError as e:
+              rows.append('%s -> HTTP %s' % (u, e.code))
+            except Exception as e:
+              rows.append('%s -> ERR %s' % (u, str(e)[:50]))
+          print('\n'.join(rows) if rows else 'no probes')
+          with open('probe-results.md', 'a') as fo:
+            fo.write('\n## %s\n%s\n' % (time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()), '\n'.join(rows)))
+          ROBOT_PY
+
+      - name: Commit (single push, no race)
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add leads reports knowledge inventory state_*.json probe-results.md || true
+          if ! git diff --cached --quiet; then
+            git commit -m "analyst cycle $(date -u +'%Y-%m-%d-%H-%M')"
+          fi
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin main && break
+            echo "commit push attempt $i failed, retrying in 20s..."
+            sleep 20
+          done
+          git log --oneline -1

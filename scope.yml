@@ -1,0 +1,57 @@
+programs:
+  cfoptimizer:
+    name: Cash Flow Optimizer Vulnerability Reporting Policy
+    disclosure_policy: https://www.cfoptimizer.com/vulnerability-reporting-policy/
+    contact: support@cfoptimizer.com
+    email_subject: "Vulnerability Report"
+    ack_within: "3 business days"
+    operator: "RealtoResource, LLC dba Solidify Solutions"
+    domains:
+      - cfoptimizer.com
+      - www.cfoptimizer.com
+      - app.cfoptimizer.com
+      - "*.cfoptimizer.com"
+    github_orgs: []
+    rewards: "NONE — NOT a formal bug bounty. Responsible disclosure only; possible public acknowledgment with permission"
+
+rules:
+  # CFO policy: no monetary rewards, responsible disclosure; no data access beyond minimum
+  passive_only: false    # active testing allowed but non-destructive; no data modification
+  max_requests_per_second: 1
+  no_account_creation: true   # accounts not mentioned; keep unauth-first
+  no_data_modification: true  # do not access/modify/exfiltrate data beyond minimum necessary
+  no_denial_of_service: true  # DoS, spam, destructive testing explicitly excluded
+  no_pre_disclosure: true     # no public disclosure before reasonable opportunity to fix; do NOT report via public channels
+  stop_on_customer_pii: true  # immediately stop testing and contact them if any customer PII encountered
+  redact_secrets_in_commits: true
+
+# CFO EXPLICIT REJECT LIST (from policy - do NOT spend cycles, do NOT report)
+rejected_classes:
+  - "Automated scanner findings with no demonstrated security impact"
+  - "Missing security headers (SPF/DKIM/etc.) without demonstrated exploitation"
+  - "Clickjacking on pages without sensitive functionality"
+  - "Email or username enumeration without demonstrated impact"
+  - "Rate limiting / brute-force on low-sensitivity endpoints"
+  - "Theoretical vulnerabilities without a working proof of concept"
+  - "Denial of service attacks or stress testing"
+  - "Social engineering of employees or customers"
+  - "Physical attacks against offices or hardware"
+  - "Known third-party dependency vulnerabilities already tracked upstream"
+  - "Findings requiring prior compromise of the victim's device or browser"
+
+# What PAYS (in scope + interested, no cash though): must have working PoC
+# - XSS, CSRF, SQLi / other injections
+# - AuthN/AuthZ bypass (incl. broken access control)
+# - IDOR / tenant-data isolation failures (MULTI-TENANT fintech — prime class)
+# - SSRF, RCE
+# - Sensitive data exposure (API keys, credentials, PII in responses)
+# - Security misconfigurations affecting customer data
+# - Business logic vulnerabilities with material security impact
+
+# Multi-model ensemble
+models:
+  - { id: opencode/big-pickle, name: bigpickle }
+  - { id: opencode/nemotron-3-ultra-free, name: nemotron3 }
+  - { id: opencode/longcat-2.0-free, name: longcat }
+  - { id: opencode/ling-3.0-flash-free, name: ling3 }
+  - { id: opencode/laguna-s-2.1-free, name: laguna }
