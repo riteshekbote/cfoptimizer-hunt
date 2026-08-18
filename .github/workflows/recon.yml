@@ -46,7 +46,7 @@ jobs:
             print("crt count:", len(names))
           except Exception as ex: print("crt err", ex)
           ' || true
-          cat /tmp/crt.txt 2>/dev/null >> /tmp/subs.txt
+          cat /tmp/crt.txt 2>/dev/null >> /tmp/subs.txt || true
           sort -u /tmp/subs.txt -o /tmp/subs.txt
           wc -l /tmp/subs.txt
 
