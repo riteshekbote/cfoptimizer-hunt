@@ -27,3 +27,17 @@ Scope: app.cfoptimizer.com (SPA) + Supabase project hyrcvhzrnfbppyzuuosp.supabas
 
 ## Context
 White-label multi-tenant platform by Solidify Solutions (RealtoResource, LLC). Same Supabase project likely shared across white-label brands. Contact: support@cfoptimizer.com, subject "Vulnerability Report".
+
+## Follow-up deep-dive (session 2) — additional results
+- RPC surface: only `is_master_admin(_user_id)` (false for all non-master) and `get_admin_user_id(_user_id)` (echoes input uid when no membership; returns admin id otherwise). No exploitable RPCs.
+- INSERT policies tested: `company_memberships` (own user_id only; forged user_id → 42501), `leads` (42501), `token_transactions` (42501, enum values discovered: purchase/bonus/refund/usage are valid but blocked), `user_sessions` (OPEN for own user_id — row created with login_at default; forged uid blocked).
+- `customers` table exists with user_id/email/phone/status columns — RLS-scoped ([]).
+- **RLS gap found: company_memberships INSERT policy does NOT validate `company_admin_id`/`company_code` ownership.** Attacker can insert `{user_id: own, company_admin_id: <any real auth uid>, role: "admin", company_code: <any 5-char code>}` — passes RLS (auth.uid()=user_id) and the unique constraint (user_id, company_admin_id). Only FK (company_admin_id must be a real auth user) and the unique key stop it. Impact: if attacker learns a victim's auth uid + company code, they become an admin member of the victim's tenant → all RLS-scoped data (profiles, leads, clients, bank data) becomes readable. Enumeration of (uid, code) pairs via API is currently blocked (RLS-scoped reads, no invite flow in SPA). Codes are 5-char alnum (~916M space, not brute-forceable directly); uids are UUIDs.
+- No edge functions besides stripe-webhook (signature properly verified); no storage buckets; no other RPCs; email change requires confirmation.
+- White-label platform: solidifysolutions.com is an unrelated WordPress sales consultancy — NOT the platform vendor. Platform branding: "solidify-blue" theme.
+
+## Verdict
+Supabase layer is well-defended (RLS everywhere except the membership-insert admin_id check; billing/token/affiliate columns trigger-protected; Stripe webhook valid). Reportable items for responsible disclosure:
+1. [LOW] Open signup with mailer_autoconfirm=true (no email verification) on a fintech app — abuse of trials/affiliate/token system, spam.
+2. [LOW/MED] Missing ownership check on company_memberships.company_admin_id at INSERT (cross-tenant membership primitive; exploitation requires a leaked uid+code).
+3. [INFO] Protected-column enumeration via trigger 42501 message; user_sessions rows insertable for self.
