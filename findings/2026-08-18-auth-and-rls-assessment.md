@@ -41,3 +41,13 @@ Supabase layer is well-defended (RLS everywhere except the membership-insert adm
 1. [LOW] Open signup with mailer_autoconfirm=true (no email verification) on a fintech app — abuse of trials/affiliate/token system, spam.
 2. [LOW/MED] Missing ownership check on company_memberships.company_admin_id at INSERT (cross-tenant membership primitive; exploitation requires a leaked uid+code).
 3. [INFO] Protected-column enumeration via trigger 42501 message; user_sessions rows insertable for self.
+
+## Session 3 — two-account PoC (triager re-evaluation) — FINDING DISPROVEN
+Full exploit attempt with real accounts (victim B + attacker A):
+1. A reads B's profile by company_code filter → [] (baseline, isolated)
+2. A INSERT company_memberships {user_id: A, company_admin_id: B (real uid), role: "admin", company_code: B's code, is_active: true} → **SUCCESS, row persisted** (id returned)
+3. A re-queries ALL tables (profiles, leads, clients, customers, company_data, chat_messages, tasks, todos, deal_notes, entities, job_sections, bank_transactions, ar_invoices) → **ALL []**
+
+CONCLUSION: every SELECT RLS policy is `user_id = auth.uid()` (user-scoped), NOT company-membership-scoped. The tenant model is per-user (company_id unique per profile), so the inserted membership row is visible ONLY to the attacker themselves (their own rows) and to no other user or victim UI. No confidentiality impact, no integrity impact visible to any other party, no enumeration path.
+
+TRIAGER VERDICT: **NOT REPORTABLE** — no security impact demonstrated. Classify as "missing server-side input validation on a self-referential row; zero cross-user impact". Finding downgraded from LOW/MED to NOT-A-FINDING. (Do not submit.)
