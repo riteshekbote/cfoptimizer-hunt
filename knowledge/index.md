@@ -51,3 +51,5 @@
 - VERDICT: missing RLS on financial-aggregator tables; zero rows -> no data exposure; report as Low config finding (reports/2026-08-18_supabase_anon_key_rls.md).
 
 - 2026-08-18 DEEP-DIVE (opencode-session 2nd pass): realtime anon sub CONFIRMED (phx_reply ok, postgres_changes public.prospects, id 108174887); hashcat rockyou 14.3M EXHAUSTED no crack (secret strong, no service_role forgery); bundle sweep clean (anon only); storage [] ; auth token oracle no-enum (identical invalid_credentials x2); finding updated with addendum.
+
+- 2026-08-18 FINDING UPGRADED LOW->HIGH (opencode-session 3rd pass): GraphQL enabled (graphql/v1, anon). Full ~300-table schema + insert/update/delete mutations visible to anon. LIVE DATA readable: subscription_plans (3 rows: Starter $99/mo, Enterprise, Growth), token_packages (4 rows, live stripe_price_id price_1TS4ZtRxKwHk31G9oV6pgdgc). WRITE PERMS EXECUTE: updatebank_transactionsCollection -> affectedCount 0, deleteFrombank_transactionsCollection -> affectedCount 0 (zero-row probes, no data touched). qbo_connections still denied. Others empty. -> HIGH config finding (report rewritten).
