@@ -206,3 +206,50 @@ Supabase project misconfiguration:
 ## 11. Contact
 
 Researcher: [anonymous on request] — preferred contact: via support@cfoptimizer.com reply thread.
+
+---
+
+## 12. Additional findings from the deeper pass (2026-08-18)
+
+### 12.1 Edge functions callable anonymously [LOW/INFO]
+Supabase Edge Functions invoked client-side by the app are reachable by anyone
+with the anon key (no auth gate):
+- `POST /functions/v1/check-signup-email` {"email":"x@example.com"} -> `{"exists":false}`
+  -- **user-existence oracle**: the app itself uses it at signup ("An account with this
+  email already exists..."). Any email can be tested pre-auth. Per policy, enumeration
+  without demonstrated impact = informational; noted for defense-in-depth.
+- `POST /functions/v1/rate-limit` {"action":"check","email":"...","attempt_type":"signup"}
+  -> `{"allowed":true,"attempts_remaining":5,"lockout_minutes":15}` -- rate-limit
+  configuration disclosed. Tested actions: only `check` + `record` (no reset/clear/success);
+  counter persists per email (verified 5->4 after one record on a fabricated address).
+  Rate limiting is functional; no bypass found.
+
+### 12.2 Anonymous master-admin identification [MEDIUM]
+A no-argument RPC exposed via GraphQL leaks the master-admin user UUID, and a second
+RPC confirms the role -- a complete anonymous admin-identification chain:
+```
+query { get_website_lead_owner_id }  -> "cd603e78-73ae-48a0-a15e-734b4ffd8fe6"
+POST /rest/v1/rpc/is_master_admin   {"_user_id":"cd603e78-...f8fe6"} -> true
+POST /rest/v1/rpc/is_account_active {"_user_id":"cd603e78-...f8fe6"} -> true
+POST /rest/v1/rpc/get_admin_user_id {"_user_id":"cd603e78-...f8fe6"} -> "cd603e78-...f8fe6"
+```
+Impact: combined with Finding 2 (anon write grants), an attacker knows exactly which
+identity to target/spoof and can aim admin-scoped actions at it; reduces defense-in-depth
+for any future admin-keyed endpoint.
+
+### 12.3 Full-surface row census [confirmed exposure extent]
+Swept all **344** collections (from GraphQL introspection) via PostgREST with the anon key
+at ~2 req/s:
+- 342 tables: anon-READABLE, currently **0 rows**
+- 2 tables contain live data: `subscription_plans` (3), `token_packages` (4)
+- `qbo_connections`: the single table returning 42501 permission denied (properly protected)
+
+=> The access-control problem is global (anon can read the entire schema); the data-volume
+impact is currently limited to billing configuration only. The write capability extends to
+all granted tables.
+
+### 12.4 Controls re-verified
+- JWT secret: rockyou 14,343,384-word exhaustion -> no crack (no service_role forgery)
+- No service_role/Stripe/Plaid/Unipile secrets in bundle
+- Auth token oracle: no user enumeration (identical errors)
+- Storage: no buckets; Realtime accepts anon subscription (public.prospects confirmed)
