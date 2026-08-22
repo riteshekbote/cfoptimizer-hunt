@@ -23,11 +23,11 @@ jobs:
       fail-fast: false
       matrix:
         model:
-          - { id: opencode/big-pickle, name: bigpickle }
-          - { id: opencode/nemotron-3-ultra-free, name: nemotron3 }
-          - { id: opencode/longcat-2.0-free, name: longcat }
-          - { id: opencode/ling-3.0-flash-free, name: ling3 }
-          - { id: opencode/laguna-s-2.1-free, name: laguna }
+          - { id: opencode-go/ox-alpha-free, name: bigpickle }
+          - { id: opencode-go/ox-alpha-free, name: nemotron3 }
+          - { id: opencode-go/ox-alpha-free, name: longcat }
+          - { id: opencode-go/ox-alpha-free, name: ling3 }
+          - { id: opencode-go/ox-alpha-free, name: laguna }
     env:
       MODEL_ID: ${{ matrix.model.id }}
       MODEL_NAME: ${{ matrix.model.name }}
@@ -80,6 +80,12 @@ jobs:
         run: |
           cat > analyst-prompt.txt << 'PROMPT_START'
           You are a senior bug bounty ANALYST for target ${TARGET} (and *.${TARGET}). Scope + rules are above — the scope.yml rejected_classes list is the CF Optimizer policy (CORS/headers/TLS/DNS/rate-limit/self-XSS/low-value-CSRF/MiTM/non-exploitable are NOT reportable). Never propose those. Run these 8 steps and output ONLY the structured blocks.
+          MAX MODE (ox-alpha-free 1M ctx): dig DEEPER + FASTER. Directives:
+          - Hunt HIGH-VALUE classes first: broken auth/session handling, IDOR/BOLA, SSRF-to-cloud-metadata (169.254.169.254), mass assignment, JWT alg/key confusion, OAuth redirect_uri/state flaws, business logic on money/auth flows, file upload, GraphQL introspection+mutations.
+          - CHAIN primitives aggressively: open redirect -> OAuth code theft -> ATO; XSS -> session theft -> ATO; IDOR -> cross-tenant PII dump; SSRF -> metadata -> keys. One chained lead beats ten weak ones.
+          - Request-level reasoning only: exact METHOD path + params + headers + body, expected vs actual status codes. No prose filler, no restating context.
+          - Breadth pass over the FULL inventory for anomalies (odd status codes, interesting param names like id/uid/email/user_id, versioned APIs /api/v1|v2|beta|internal, debug/test flags, swagger/openapi/json exposure), then depth on top-3 anomalies this cycle.
+          - If a hypothesis needs live confirmation you cannot do passively, emit [NEXT] PROBE with the EXACT read-only request so the next cycle executes it immediately.
 
           STEP 1 — DELTA: Compare knowledge + inventory + your last leads. List only NEW or CHANGED surface items as [NEW]/[CHANGED] (one line each). If nothing is new, state "NO_DELTA".
 
