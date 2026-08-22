@@ -18,7 +18,7 @@ permissions:
   contents: write
 
 env:
-  JS_MODEL: opencode/deepseek-v4-flash-free
+  JS_MODEL: opencode-go/ox-alpha-free
   PROBE_ALLOW: "cfoptimizer"
 
 jobs:
