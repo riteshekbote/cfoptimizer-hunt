@@ -1,0 +1,46 @@
+[
+ {
+  "url": "https://www.cfoptimizer.com/js/cookie-consent.js",
+  "status": "done"
+ },
+ {
+  "url": "https://www.cfoptimizer.com/assets/index-vZPPMwTO.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/index-CzNI9BzM.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/vendor-react-DuXOP3VQ.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/vendor-ui-core-BvI-01LM.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/vendor-supabase-BrcxwPEH.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/vendor-ui-form-DQRXHDmr.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/vendor-ui-layout-BcdBlrwG.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/vendor-utils-D1z6i5bN.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/vendor-query-JmCMu9Y4.js",
+  "status": "done"
+ },
+ {
+  "url": "https://app.cfoptimizer.com/assets/vendor-motion-guH_vUp5.js",
+  "status": "done"
+ }
+]
