@@ -81,7 +81,7 @@ jobs:
           new = []
           for base in seeds:
               try:
-                  req = urllib.request.Request(base, headers={'User-Agent':'Mozilla/5.0'})
+                  req = urllib.request.Request(base, headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"})
                   html = urllib.request.urlopen(req, timeout=15).read().decode(errors='ignore')
               except Exception:
                   continue
@@ -110,7 +110,7 @@ jobs:
           for item in pending:
               u = item['url']; fn = 'blobs/' + re.sub(r'\W','_',u)[:80]
               try:
-                  req = urllib.request.Request(u, headers={'User-Agent':'Mozilla/5.0'})
+                  req = urllib.request.Request(u, headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"})
                   data = urllib.request.urlopen(req, timeout=15).read()
               except Exception as e:
                   item['status']='error'; out.write(f"- ERR {u}: {str(e)[:60]}\n"); continue
