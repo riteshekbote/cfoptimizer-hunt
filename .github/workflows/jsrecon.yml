@@ -87,7 +87,8 @@ jobs:
                   continue
               for m in re.finditer(r'(?:src|href)="([^"]+\.(?:js|json))"', html):
                   u = m.group(1)
-                  if u.startswith('/'): u = base.rstrip('/') + u
+                  if u.startswith('//'): u = 'https:' + u
+                  elif u.startswith('/'): u = base.rstrip('/') + u
                   elif not u.startswith('http'): continue
                   if u in have or u in new: continue
                   new.append(u)
