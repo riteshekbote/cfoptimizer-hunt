@@ -23,13 +23,14 @@ jobs:
       fail-fast: false
       matrix:
         model:
-          - { id: opencode-go/ox-alpha-free, name: bigpickle }
-          - { id: opencode-go/ox-alpha-free, name: nemotron3 }
-          - { id: opencode-go/ox-alpha-free, name: longcat }
-          - { id: opencode-go/ox-alpha-free, name: ling3 }
-          - { id: opencode-go/ox-alpha-free, name: laguna }
+          - { id: opencode/muse-spark-1.2-contributor-free, name: bigpickle }
+          - { id: opencode/muse-spark-1.2-contributor-free, name: nemotron3 }
+          - { id: opencode/muse-spark-1.2-contributor-free, name: longcat }
+          - { id: opencode/muse-spark-1.2-contributor-free, name: ling3 }
+          - { id: opencode/muse-spark-1.2-contributor-free, name: laguna }
     env:
       MODEL_ID: ${{ matrix.model.id }}
+  OPENCODE_REASONING: xhigh
       MODEL_NAME: ${{ matrix.model.name }}
 
     steps:
