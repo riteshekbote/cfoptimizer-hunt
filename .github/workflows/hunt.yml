@@ -2,7 +2,7 @@ name: Senior Hunter - Analyst Pipeline (cfoptimizer)
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+#     - cron: "*/10 * * * *"  # disabled to stop spam
   workflow_dispatch:
 
 permissions:
