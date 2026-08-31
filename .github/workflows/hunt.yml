@@ -30,7 +30,7 @@ jobs:
           - { id: opencode/muse-spark-1.2-contributor-free, name: laguna }
     env:
       MODEL_ID: ${{ matrix.model.id }}
-  OPENCODE_REASONING: xhigh
+      OPENCODE_REASONING: xhigh
       MODEL_NAME: ${{ matrix.model.name }}
 
     steps:
