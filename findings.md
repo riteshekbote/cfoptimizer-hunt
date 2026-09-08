@@ -466,3 +466,8 @@
 ## jsrecon 2026-09-08 00:24:24 UTC
 
 ## jsrecon 2026-09-08 05:01:38 UTC
+
+## jsrecon 2026-09-08 09:35:07 UTC
+- https://app.cfoptimizer.com/assets/index-Aix00-YA.js (468948B, 1 eps, 0 maps, 1 key-hits)
+    EP /api/google/oauth/callback
+    KEY sha256:d01ff613a94ba264
